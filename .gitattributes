@@ -1,0 +1,10 @@
+# Override language detection for GitHub
+* linguist-vendored
+*.rs linguist-vendored=false
+*.toml linguist-vendored=false
+*.md linguist-vendored=false
+
+# Ignore build artifacts and toolchain files
+Makefile linguist-vendored
+*.d linguist-vendored
+target/** linguist-vendored

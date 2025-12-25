@@ -91,12 +91,12 @@ market.spread = 0.05;             // Initial spread
 
 ## 📈 Performance
 
-The Rust implementation offers significant performance improvements over the Python version:
 - Zero-copy operations where possible
 - Efficient HashMap-based market lookups
 - Deterministic PRNG (ChaCha8) for reproducibility
 - Release mode optimizations
+- Memory-safe with no garbage collection overhead
 
-## 🔗 Related
+## 📄 License
 
-- [Python Implementation](../quant_bot_submission/) - Original Python version with Streamlit dashboard
+MIT

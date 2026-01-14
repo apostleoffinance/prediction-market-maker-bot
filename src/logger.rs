@@ -1,24 +1,26 @@
 use crate::market_state::MarketState;
 use csv::Writer;
+use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
+use std::path::Path;
 
 #[derive(Debug, serde::Serialize)]
 struct ReportRow {
     market: String,
-    mid: f64,
-    spread: f64,
-    inventory: f64,
-    pnl: f64,
+    mid: Decimal,
+    spread: Decimal,
+    inventory: Decimal,
+    pnl: Decimal,
     fill_count: u64,
-    notional: f64,
-    max_drawdown: f64,
+    notional: Decimal,
+    max_drawdown: Decimal,
 }
 
 pub fn write_report(
     states: &HashMap<String, MarketState>,
-    out_path: &str,
+    out_path: &Path,
 ) -> Result<(), Box<dyn Error>> {
     let file = File::create(out_path)?;
     let mut writer = Writer::from_writer(file);

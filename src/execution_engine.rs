@@ -2,23 +2,26 @@ use crate::market_maker::{FillResult, MarketMaker, Order};
 use crate::market_state::MarketState;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::error::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StepResult {
     pub fills: Vec<FillInfo>,
-    pub mid: f64,
-    pub inventory: f64,
-    pub pnl: f64,
-    pub spread: f64,
+    pub mid: Decimal,
+    pub inventory: Decimal,
+    pub pnl: Decimal,
+    pub spread: Decimal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FillInfo {
     pub side: String,
-    pub size: f64,
-    pub price: f64,
+    pub size: Decimal,
+    pub price: Decimal,
 }
 
 impl From<&FillResult> for FillInfo {
@@ -54,8 +57,9 @@ impl ExecutionEngine {
     }
 
     /// Simulate random market order flow for a given market
-    fn simulate_order_flow(&mut self, market_name: &str) -> Vec<Order> {
-        let state = self.markets.get(market_name).unwrap();
+    fn simulate_order_flow(&mut self, market_name: &str) -> Result<Vec<Order>, Box<dyn Error>> {
+        let state = self.markets.get(market_name)
+            .ok_or_else(|| format!("Market '{}' not found", market_name))?;
         let mut orders = Vec::new();
         
         // Generate 1-3 orders per tick
@@ -64,15 +68,16 @@ impl ExecutionEngine {
         for _ in 0..n {
             // Bias toward mid: higher mid -> more buys, lower mid -> more sells
             let noise: f64 = self.rng.gen_range(-0.15..0.15);
-            let prob = state.mid + noise;
+            let prob_f64 = state.mid.to_f64().ok_or("Failed to convert mid to f64")? + noise;
             
-            let side = if prob > 0.5 { "buy" } else { "sell" };
+            let side = if prob_f64 > 0.5 { "buy" } else { "sell" };
             
             // Size follows a normal-ish distribution clamped to [1, 30]
-            let size: f64 = (self.rng.gen::<f64>() * 4.0 + 4.0).max(1.0).min(30.0);
+            let size_f64: f64 = (self.rng.gen::<f64>() * 4.0 + 4.0).max(1.0).min(30.0);
+            let size = Decimal::from_f64(size_f64).ok_or("Failed to convert size to Decimal")?;
             
             // Price: buyers willing to pay 1.0, sellers accept 0.0
-            let price = if side == "buy" { 1.0 } else { 0.0 };
+            let price = if side == "buy" { Decimal::ONE } else { Decimal::ZERO };
             
             orders.push(Order {
                 side: side.to_string(),
@@ -81,23 +86,25 @@ impl ExecutionEngine {
             });
         }
         
-        orders
+        Ok(orders)
     }
 
     /// Execute one simulation step across all markets
-    pub fn step(&mut self) -> HashMap<String, StepResult> {
+    pub fn step(&mut self) -> Result<HashMap<String, StepResult>, Box<dyn Error>> {
         let mut results = HashMap::new();
         
         let market_names: Vec<String> = self.markets.keys().cloned().collect();
         
         for name in market_names {
-            let orders = self.simulate_order_flow(&name);
+            let orders = self.simulate_order_flow(&name)?;
             
             // Get mutable references
-            let state = self.markets.get_mut(&name).unwrap();
-            let mm = self.market_makers.get_mut(&name).unwrap();
+            let state = self.markets.get_mut(&name)
+                .ok_or_else(|| format!("Market '{}' not found", name))?;
+            let mm = self.market_makers.get_mut(&name)
+                .ok_or_else(|| format!("Market maker for '{}' not found", name))?;
             
-            let fills = mm.on_tick(state, &orders);
+            let fills = mm.on_tick(state, &orders)?;
             
             // Update PnL for each fill
             for fill in &fills {
@@ -110,7 +117,10 @@ impl ExecutionEngine {
             }
             
             // Small mean reversion toward 0.5
-            state.mid = state.mid * 0.995 + 0.5 * 0.005;
+            let alpha = Decimal::new(995, 3);  // 0.995
+            let beta = Decimal::new(5, 3);     // 0.005
+            let half = Decimal::new(5, 1);     // 0.5
+            state.mid = state.mid * alpha + half * beta;
             
             results.insert(
                 name,
@@ -125,17 +135,17 @@ impl ExecutionEngine {
         }
         
         self.time += 1;
-        results
+        Ok(results)
     }
 
     /// Run simulation for a given number of steps
-    pub fn run(&mut self, steps: usize) -> Vec<HashMap<String, StepResult>> {
+    pub fn run(&mut self, steps: usize) -> Result<Vec<HashMap<String, StepResult>>, Box<dyn Error>> {
         let mut trace = Vec::with_capacity(steps);
         
         for _ in 0..steps {
-            trace.push(self.step());
+            trace.push(self.step()?);
         }
         
-        trace
+        Ok(trace)
     }
 }
